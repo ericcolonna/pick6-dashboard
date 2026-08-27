@@ -1,9 +1,0 @@
-# Cash / manual members — members who pay you outside Stripe.
-# Edit this file any time; the dashboard picks it up on the next refresh.
-# tier: use one of  Coach | Athlete | Lockdown Pro | Legacy | Elite | Free
-# amount: what they pay per interval, in USD. Use 0 for comped/free members.
-# interval: month | year | one-time
-# Delete these two example rows once you add your real ones.
-name,tier,amount,interval,note
-Example Athlete,Athlete,39,month,pays cash monthly at training
-Example Comped,Free,0,month,comped - team coach
