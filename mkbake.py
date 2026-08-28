@@ -15,7 +15,10 @@ H=[compact(s) for s in subs]
 # names only for customers we could ever show
 N={k:[v['name'],v['email']] for k,v in cmap.items()}
 INV=[{'s':i['sub'],'c':i['cust'],'a':i['amt'],'u':i['cur_code'],'t':i['created'],'url':i['url']} for i in inv]
-C={k:v for k,v in ctry.items() if k in cmap}      # only customers we can show
+# Ship every country we know. Do NOT filter by cmap: a customer can be missing
+# from the name map (stale pull) and still be a live member whose flag we have -
+# and the live sync fills their name in later anyway.
+C=dict(ctry)
 bake={'H':H,'N':N,'P':prod,'FX':fx,'INV':INV,'C':C,
       'stamp':datetime.datetime.now(datetime.timezone.utc).timestamp()}
 json.dump(bake,open('bake.json','w'),separators=(',',':'))

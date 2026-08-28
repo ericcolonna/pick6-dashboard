@@ -99,13 +99,29 @@ function compute(){
     else if(LIVE_ST.has(s.s) && s.ce)    { state='leaving';  label='Leaving '+fmtDate(s.pe||now); }
     else if(LIVE_ST.has(s.s))            { state='active';   label='Active'; }
     else                                 { state='gone';     label='Cancelled'+(s.en?' '+fmtDate(s.en):''); }
-    return {name:n, email:e, tier:t, group:groupOf(t), cc:ctryOf(s.c),
+    return {name:n, email:e, cid:s.c, tier:t, group:groupOf(t), cc:ctryOf(s.c),
             state, label, since:fmtDate(s.cr), ts:s.cr,
             amt:+perMonth(s).toFixed(2), cur:s.u};
   }).sort((a,b)=>{
     const rank={past_due:0, leaving:1, active:2, gone:3, never:4};
     return rank[a.state]-rank[b.state] || b.ts-a.ts;
   });
+
+  /* ---- members by country ----
+     Counts PEOPLE, not subscriptions: one member holding two plans is one
+     person in one country. That is why this total can sit below the
+     subscription counts on the money tiles. Country comes from the customer's
+     card, so a member with no charge on file has none. */
+  const CC = {}, seenCust = new Set();
+  let ccKnown = 0, ccUnknown = 0;
+  for(const s of HIST){
+    if(!LIVE_ST.has(s.s) || seenCust.has(s.c)) continue;
+    seenCust.add(s.c);
+    const cc = ctryOf(s.c);
+    if(cc){ CC[cc] = (CC[cc]||0)+1; ccKnown++; } else ccUnknown++;
+  }
+  const countries = Object.keys(CC).map(cc=>({cc, n:CC[cc]}))
+                          .sort((a,b)=> b.n-a.n || a.cc.localeCompare(b.cc));
 
   /* ---- trends ---- */
   const first = Math.min(...HIST.map(s=>s.cr));
@@ -162,6 +178,7 @@ function compute(){
       stalled: HIST.filter(s=>s.s==='incomplete_expired').length,
       manual_n:0, manual_mrr:0, manual_usd:0, manual_cad:0, now_ts:now
     },
+    countries, cc_known:ccKnown, cc_unknown:ccUnknown,
     groups, tiers, trends, joined, churned, leaving, past_due, roster, manual:[]
   };
 }

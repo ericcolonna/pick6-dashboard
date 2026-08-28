@@ -207,6 +207,42 @@ footer{font-size:12px;color:var(--ink-3);border-top:1px solid var(--line);paddin
  color:var(--ink-2);word-break:break-all}
 .mailrow a{color:var(--la);text-decoration:none}
 .mailrow a:hover{text-decoration:underline}
+
+/* members by country — single series, so no legend and no palette;
+   the country name carries identity, the bar carries magnitude only */
+.ctot{display:flex;align-items:baseline;gap:10px;padding:16px 18px 4px}
+.ctot .big{font-family:"IBM Plex Mono",monospace;font-size:30px;font-weight:500;
+ letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.ctot .cap{font-size:13px;color:var(--ink-3)}
+.clist{list-style:none;margin:0;padding:8px 18px 18px}
+.clist li{border-radius:6px}
+.crow{display:grid;grid-template-columns:22px minmax(96px,1fr) 2.6fr 34px 44px 16px;
+ align-items:center;gap:10px;padding:5px 0;border-radius:6px;cursor:pointer}
+.crow:hover{background:var(--panel-2)}
+.clist li.open>.crow{background:var(--panel-2)}
+.chev{font-size:10px;color:var(--ink-3);transition:transform .12s ease;text-align:center}
+.clist li.open .chev{transform:rotate(90deg)}
+.clist .cn{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.clist .track{display:block;height:9px;background:var(--line-soft);border-radius:99px;overflow:hidden}
+.clist .fill{display:block;height:9px;background:var(--la);border-radius:0 4px 4px 0;min-width:3px}
+.clist .cnum{font-family:"IBM Plex Mono",monospace;font-size:13px;text-align:right;
+ font-variant-numeric:tabular-nums}
+.clist .cpct{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-3);
+ text-align:right;font-variant-numeric:tabular-nums}
+@media (max-width:600px){.crow{grid-template-columns:22px minmax(84px,1fr) 1.4fr 30px 40px 16px}}
+
+/* the members inside an expanded country */
+.cmem{list-style:none;margin:2px 0 10px;padding:0 0 0 32px;
+ border-left:2px solid var(--line-soft);margin-left:9px}
+.cmem li{display:flex;align-items:center;gap:11px;padding:7px 0;cursor:pointer;
+ border-top:1px solid var(--line-soft)}
+.cmem li:first-child{border-top:none}
+.cmem li:hover{background:var(--panel-2)}
+.cmem .who{flex:1;min-width:0}
+.cmem .nm{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmem .mt{font-size:11.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmem .amt{font-size:12.5px}
+.cmem .mailrow{padding:0 0 10px 0;margin:0}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -287,6 +323,12 @@ footer{font-size:12px;color:var(--ink-3);border-top:1px solid var(--line);paddin
              placeholder="Search every member, past or present — name, email or country">
     </div>
     <ul class="people" id="results"></ul>
+  </section>
+
+  <section class="panel" style="margin-top:22px">
+    <div class="phead"><h2>Members by country</h2><div class="note" id="ctrynote"></div></div>
+    <div class="ctot"><span class="big" id="ctrytotal"></span><span class="cap" id="ctrycap"></span></div>
+    <ul class="clist" id="ctrylist"></ul>
   </section>
 
   <footer>
@@ -633,7 +675,8 @@ $('#pdpanel').querySelector('.note').textContent = P.length ? 'Chase these' : 'A
    just current members - so "was this guy ever a member?" is answerable.
    Email is matchable but stays hidden until the row is clicked. */
 const CAP = 60;
-let OPEN = new Set();
+let OPEN = new Set();      // revealed emails, in search and country lists alike
+let OPENCC = new Set();    // expanded country rows
 const norm = s => String(s||'').toLowerCase();
 
 function searchHits(q){
@@ -690,6 +733,102 @@ $('#results').addEventListener('click', e=>{
 });
 $('#q').addEventListener('input', ()=>{ OPEN.clear(); renderSearch(); });
 
+/* ---------- Members by country ----------
+   One series (a count), so: no legend, no categorical palette, every bar the
+   same hue. The country name carries identity; the bar carries magnitude. */
+function renderCountries(){
+  const L = D.countries, total = D.cc_known + D.cc_unknown;
+  $('#ctrytotal').textContent = total;
+  $('#ctrycap').innerHTML = `${total===1?'person':'people'} paying you, across
+    <strong style="color:var(--ink-2)">${L.length}</strong> countr${L.length===1?'y':'ies'}`;
+  $('#ctrynote').textContent = D.cc_unknown
+    ? `${D.cc_unknown} without a country on file`
+    : 'Every member mapped';
+
+  if(!L.length){ $('#ctrylist').innerHTML =
+    `<div class="empty">No country data yet.</div>`; return; }
+
+  const max = L[0].n;
+  $('#ctrylist').innerHTML = L.map(r=>{
+    const pct  = total ? (r.n/total*100) : 0;
+    const nm   = ctryName(r.cc);
+    const open = OPENCC.has(r.cc);
+    return `<li class="${open?'open':''}">
+      <div class="crow" data-cc="${esc(r.cc)}" role="button" tabindex="0"
+           aria-expanded="${open}"
+           title="${esc(nm)} — ${r.n} of ${total} members (${pct.toFixed(1)}%) · click for the list">
+        ${flag(r.cc)}
+        <span class="cn">${esc(nm)}</span>
+        <span class="track"><span class="fill" style="width:${(r.n/max*100).toFixed(1)}%"></span></span>
+        <span class="cnum">${r.n}</span>
+        <span class="cpct">${pct.toFixed(1)}%</span>
+        <span class="chev">▶</span>
+      </div>
+      ${open ? memberList(r.cc) : ''}
+    </li>`;
+  }).join('');
+}
+
+/* The people behind one country bar. Current members only — the bar counts
+   people, so this list must too: one row per person, their plans listed
+   together rather than as separate rows. */
+function memberList(cc){
+  const live = new Set(['active','past_due','leaving']);
+  const rows = D.roster.filter(r=>r.cc===cc && live.has(r.state));
+  // Group by customer id, never by name: members missing from the name map are
+  // all called "Unknown" and would otherwise collapse into a single row.
+  const byPerson = new Map();
+  for(const r of rows){
+    if(!byPerson.has(r.cid)) byPerson.set(r.cid, {cid:r.cid, name:r.name, email:r.email, cc:r.cc, subs:[]});
+    byPerson.get(r.cid).subs.push(r);
+  }
+  const people = [...byPerson.values()]
+    .sort((a,b)=>a.name.localeCompare(b.name,'en',{sensitivity:'base'}));
+
+  return `<ul class="cmem">` + people.map(p=>{
+    const key  = 'cc:'+cc+'|'+p.name+'|'+p.email;
+    const open = OPEN.has(key);
+    const worst = p.subs.slice().sort((a,b)=>
+      ({past_due:0,leaving:1,active:2})[a.state]-({past_due:0,leaving:1,active:2})[b.state])[0];
+    const plans = p.subs.map(s=>esc(s.tier)).join(' + ');
+    const money = p.subs.map(s=>nat(s.amt,s.cur)).join(' + ');
+    const since = p.subs.map(s=>s.since).sort()[0];
+    const mail  = p.email
+      ? `<div class="mailrow"><a href="mailto:${esc(p.email)}">${esc(p.email)}</a></div>`
+      : `<div class="mailrow" style="color:var(--ink-3)">No email on file</div>`;
+    return `<li data-k="${esc(key)}" title="Click to ${open?'hide':'show'} email">
+        <span class="who"><span class="nm">${esc(p.name)}</span><br>
+          <span class="mt">${plans} · joined ${esc(p.subs[p.subs.length-1].since)}</span></span>
+        <span class="st ${worst.state}">${esc(worst.label)}</span>
+        <span class="amt ${worst.state==='active'?'':'flat'}">${money}</span>
+      </li>${open?mail:''}`;
+  }).join('') + `</ul>`;
+}
+
+$('#ctrylist').addEventListener('click', e=>{
+  const mem = e.target.closest('.cmem li');
+  if(mem){                                   // a person inside a country
+    const k = mem.dataset.k;
+    OPEN.has(k) ? OPEN.delete(k) : OPEN.add(k);
+    renderCountries(); return;
+  }
+  const row = e.target.closest('.crow');
+  if(!row) return;                           // a country bar
+  const cc = row.dataset.cc;
+  OPENCC.has(cc) ? OPENCC.delete(cc) : OPENCC.add(cc);
+  renderCountries();
+});
+$('#ctrylist').addEventListener('keydown', e=>{
+  if(e.key!=='Enter' && e.key!==' ') return;
+  const row = e.target.closest('.crow'); if(!row) return;
+  e.preventDefault();
+  const cc = row.dataset.cc;
+  OPENCC.has(cc) ? OPENCC.delete(cc) : OPENCC.add(cc);
+  renderCountries();
+  const again = $('#ctrylist').querySelector(`.crow[data-cc="${cc}"]`);
+  if(again) again.focus();
+});
+
 /* ---------- Range toggle ---------- */
 $('#range').innerHTML = D.windows.map(w=>
   `<button type="button" data-k="${w.key}" aria-pressed="${w.key===RANGE}">${w.label}</button>`).join('');
@@ -703,7 +842,7 @@ function redraw(){
   drawChart('#chart','#tip', combined(RANGE));
   renderZoomNote();
   renderPeople(); renderLeaving(); renderPastDue();
-  renderTable(); renderFoot(); renderSearch();
+  renderTable(); renderFoot(); renderSearch(); renderCountries();
 }
 $('#tierfilter').addEventListener('click', e=>{
   const b=e.target.closest('button'); if(!b) return;
