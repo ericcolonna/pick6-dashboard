@@ -678,15 +678,37 @@ const CAP = 60;
 let OPEN = new Set();      // revealed emails, in search and country lists alike
 let OPENCC = new Set();    // expanded country rows
 const norm = s => String(s||'').toLowerCase();
+const RANK = {past_due:0, leaving:1, active:2, gone:3};
+
+/* One row per PERSON, not per subscription. Grouped on customer id — never on
+   name, because members missing from the name map are all "Unknown" and would
+   collapse together. Someone who has held three plans is one row listing three. */
+function groupPeople(rows){
+  const m = new Map();
+  for(const r of rows){
+    if(!m.has(r.cid)) m.set(r.cid, {cid:r.cid, name:r.name, email:r.email, cc:r.cc, subs:[]});
+    m.get(r.cid).subs.push(r);
+  }
+  for(const p of m.values()){
+    p.subs.sort((a,b)=> RANK[a.state]-RANK[b.state] || b.ts-a.ts);
+    p.lead  = p.subs[0];                                   // most pressing status
+    p.plans = [...new Set(p.subs.map(s=>s.tier))].join(' + ');
+    p.money = p.subs.filter(s=>s.state!=='gone').map(s=>nat(s.amt,s.cur)).join(' + ')
+              || nat(p.subs[0].amt, p.subs[0].cur);
+    p.since = p.subs.map(s=>s.ts).sort((a,b)=>a-b)[0];
+    p.sinceLabel = p.subs.find(s=>s.ts===p.since).since;
+  }
+  return [...m.values()];
+}
 
 function searchHits(q){
   const terms = norm(q).split(/\s+/).filter(Boolean);
   if(!terms.length) return null;
-  return D.roster.filter(r=>{
-    const hay = [norm(r.name), norm(r.email), norm(r.tier), norm(r.cc),
-                 norm(r.cc && ctryName(r.cc))].join(' ');
+  return groupPeople(D.roster).filter(p=>{
+    const hay = [norm(p.name), norm(p.email), norm(p.cc), norm(p.cc && ctryName(p.cc)),
+                 ...p.subs.map(s=>norm(s.tier))].join(' ');
     return terms.every(t=>hay.includes(t));
-  });
+  }).sort((a,b)=> RANK[a.lead.state]-RANK[b.lead.state] || b.lead.ts-a.lead.ts);
 }
 
 function renderSearch(){
@@ -695,7 +717,7 @@ function renderSearch(){
   const note = $('#searchnote'), out = $('#results');
 
   if(hits===null){
-    note.textContent = `${D.roster.length} members, all time`;
+    note.textContent = `${groupPeople(D.roster).length} people, all time`;
     out.innerHTML = `<div class="empty">Type a name, an email, or a country — "canada", "athlete", "gmail". Everyone who has ever been a member is in here.</div>`;
     return;
   }
@@ -709,18 +731,18 @@ function renderSearch(){
     ? `${hits.length} matches · showing first ${CAP}`
     : `${hits.length} match${hits.length===1?'':'es'}`;
 
-  out.innerHTML = shown.map((r,i)=>{
-    const key = r.name+'|'+r.tier+'|'+r.ts;
+  out.innerHTML = shown.map(p=>{
+    const key = 'q:'+p.cid;
     const open = OPEN.has(key);
-    const mail = r.email
-      ? `<div class="mailrow"><a href="mailto:${esc(r.email)}">${esc(r.email)}</a></div>`
+    const mail = p.email
+      ? `<div class="mailrow"><a href="mailto:${esc(p.email)}">${esc(p.email)}</a></div>`
       : `<div class="mailrow" style="color:var(--ink-3)">No email on file</div>`;
     return `<li class="hit" data-k="${esc(key)}" title="Click to ${open?'hide':'show'} email">
-        <span class="rail" style="background:${BR[r.group]}"></span>
-        <span class="who"><span class="nm">${flag(r.cc)} ${esc(r.name)}</span><br>
-          <span class="mt">${esc(r.tier)} · joined ${r.since}</span></span>
-        <span class="st ${r.state}">${esc(r.label)}</span>
-        <span class="amt ${r.state==='active'?'':'flat'}">${nat(r.amt,r.cur)}</span>
+        <span class="rail" style="background:${BR[p.lead.group]}"></span>
+        <span class="who"><span class="nm">${flag(p.cc)} ${esc(p.name)}</span><br>
+          <span class="mt">${esc(p.plans)} · joined ${p.sinceLabel}</span></span>
+        <span class="st ${p.lead.state}">${esc(p.lead.label)}</span>
+        <span class="amt ${p.lead.state==='active'?'':'flat'}">${p.money}</span>
       </li>${open?mail:''}`;
   }).join('');
 }
@@ -774,33 +796,20 @@ function renderCountries(){
    together rather than as separate rows. */
 function memberList(cc){
   const live = new Set(['active','past_due','leaving']);
-  const rows = D.roster.filter(r=>r.cc===cc && live.has(r.state));
-  // Group by customer id, never by name: members missing from the name map are
-  // all called "Unknown" and would otherwise collapse into a single row.
-  const byPerson = new Map();
-  for(const r of rows){
-    if(!byPerson.has(r.cid)) byPerson.set(r.cid, {cid:r.cid, name:r.name, email:r.email, cc:r.cc, subs:[]});
-    byPerson.get(r.cid).subs.push(r);
-  }
-  const people = [...byPerson.values()]
+  const people = groupPeople(D.roster.filter(r=>r.cc===cc && live.has(r.state)))
     .sort((a,b)=>a.name.localeCompare(b.name,'en',{sensitivity:'base'}));
 
   return `<ul class="cmem">` + people.map(p=>{
-    const key  = 'cc:'+cc+'|'+p.name+'|'+p.email;
+    const key  = 'cc:'+p.cid;
     const open = OPEN.has(key);
-    const worst = p.subs.slice().sort((a,b)=>
-      ({past_due:0,leaving:1,active:2})[a.state]-({past_due:0,leaving:1,active:2})[b.state])[0];
-    const plans = p.subs.map(s=>esc(s.tier)).join(' + ');
-    const money = p.subs.map(s=>nat(s.amt,s.cur)).join(' + ');
-    const since = p.subs.map(s=>s.since).sort()[0];
-    const mail  = p.email
+    const mail = p.email
       ? `<div class="mailrow"><a href="mailto:${esc(p.email)}">${esc(p.email)}</a></div>`
       : `<div class="mailrow" style="color:var(--ink-3)">No email on file</div>`;
     return `<li data-k="${esc(key)}" title="Click to ${open?'hide':'show'} email">
         <span class="who"><span class="nm">${esc(p.name)}</span><br>
-          <span class="mt">${plans} · joined ${esc(p.subs[p.subs.length-1].since)}</span></span>
-        <span class="st ${worst.state}">${esc(worst.label)}</span>
-        <span class="amt ${worst.state==='active'?'':'flat'}">${money}</span>
+          <span class="mt">${esc(p.plans)} · joined ${p.sinceLabel}</span></span>
+        <span class="st ${p.lead.state}">${esc(p.lead.label)}</span>
+        <span class="amt ${p.lead.state==='active'?'':'flat'}">${p.money}</span>
       </li>${open?mail:''}`;
   }).join('') + `</ul>`;
 }

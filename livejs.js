@@ -91,11 +91,12 @@ function compute(){
   /* ---- roster: one row per subscription ever, for the search box ----
      Deliberately built from HIST, not from the live lists, so a member who
      left two years ago is just as findable as one who joined this morning. */
-  const roster = HIST.map(s=>{
+  // incomplete_expired = a checkout that never completed. Not a member, and
+  // several per person is normal (they retried), so they are excluded outright.
+  const roster = real.map(s=>{
     const [n,e]=whoOf(s.c); const t=tierOf(s);
     let state, label;
     if(s.s==='past_due')                 { state='past_due'; label='Past due'; }
-    else if(s.s==='incomplete_expired')  { state='never';    label='Never started'; }
     else if(LIVE_ST.has(s.s) && s.ce)    { state='leaving';  label='Leaving '+fmtDate(s.pe||now); }
     else if(LIVE_ST.has(s.s))            { state='active';   label='Active'; }
     else                                 { state='gone';     label='Cancelled'+(s.en?' '+fmtDate(s.en):''); }
@@ -103,7 +104,7 @@ function compute(){
             state, label, since:fmtDate(s.cr), ts:s.cr,
             amt:+perMonth(s).toFixed(2), cur:s.u};
   }).sort((a,b)=>{
-    const rank={past_due:0, leaving:1, active:2, gone:3, never:4};
+    const rank={past_due:0, leaving:1, active:2, gone:3};
     return rank[a.state]-rank[b.state] || b.ts-a.ts;
   });
 
