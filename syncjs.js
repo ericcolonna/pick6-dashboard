@@ -1,4 +1,3 @@
-
 /* ============================================================
    Live sync. Pulls only what can still change: the ~111 live
    subscriptions (2 pages) and the open invoices. The ~293
@@ -63,7 +62,10 @@ async function runSync(firstPage){
     // re-bake failing, against a real-world worst case of ~4 departures in a day.
     const dropped=[...byId.values()].filter(h=>!freshIds.has(h.i)&&h.en===0&&LIVE_ST.has(h.s));
     for(const h of dropped.slice(0,50)){
-      const r=await MCP.callTool(SRV,TOOL,req('GetSubscriptionsSubscriptionExposedId',{subscription_exposed_id:h.i}),FRESH);
+      // Stripe renamed these path params to `id` (spec 2026-08-26). Both keys are
+      // sent so the call works either way - the unused one is ignored.
+      const r=await MCP.callTool(SRV,TOOL,req('GetSubscriptionsSubscriptionExposedId',
+                                              {id:h.i, subscription_exposed_id:h.i}),FRESH);
       const full=objOf(r); const cs=full&&compactSub(full);
       if(cs) byId.set(cs.i,cs);
     }
@@ -71,7 +73,7 @@ async function runSync(firstPage){
     // Country lives on the charge, not the customer, so it is a second call -
     // but only ever for people we have not seen before, so usually zero.
     for(const c of [...newCust].slice(0,50)){
-      const r=await MCP.callTool(SRV,TOOL,req('GetCustomersCustomer',{customer:c}),FRESH);
+      const r=await MCP.callTool(SRV,TOOL,req('GetCustomersCustomer',{id:c, customer:c}),FRESH);
       const cu=objOf(r);
       if(cu) NAMES[c]=[cu.name||cu.description||(cu.metadata&&cu.metadata.name)||'Unknown', cu.email||''];
       if(!CTRY[c]){
